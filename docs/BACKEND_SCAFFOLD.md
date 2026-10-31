@@ -1,3 +1,5 @@
+> **Note:** superseded in part by `docs/API_CONTRACT.md` and `docs/FRONTEND_INTEGRATION.md`. The Next.js foundation now exists in this repo; the "copy src/" install steps below are historical.
+
 # ClaimCompass 2.0 — Backend Scaffold
 
 Backend starter for the ClaimCompass hackathon MVP. Designed for an existing Next.js App Router + TypeScript repository.

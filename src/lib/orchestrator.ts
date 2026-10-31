@@ -1,81 +1,113 @@
 import { randomUUID } from "node:crypto";
-import type { AgentResult, InvestigationResult } from "./contracts";
+import type { AgentStatus, Case, Investigation, InvestigationStatus } from "./contracts";
 import { store } from "./store";
 import { publishEvent } from "./events";
 import { sellerAgent } from "./agents/seller";
 import { manufacturerAgent } from "./agents/manufacturer";
 import { serviceCentreAgent } from "./agents/service-centre";
-import { assessResolution } from "./resolution";
+import { asError, emptyManufacturer, emptySeller, emptyServiceCentre } from "./agents/shared";
+import type { InvestigationAgent } from "./agents/types";
+import { assessResolution, buildMoney } from "./resolution";
 
-export function startInvestigation(caseId: string): string {
+export interface Agents {
+  seller: InvestigationAgent<"seller">;
+  manufacturer: InvestigationAgent<"manufacturer">;
+  serviceCentre: InvestigationAgent<"service_centre">;
+}
+const defaultAgents: Agents = { seller: sellerAgent, manufacturer: manufacturerAgent, serviceCentre: serviceCentreAgent };
+
+/**
+ * Creates and persists the investigation synchronously (status "queued"), then schedules
+ * the runner on a later tick so the caller returns immediately. `done` resolves when the
+ * background run ends and never rejects; it exists for tests.
+ */
+export function startInvestigation(caseId: string, agents: Agents = defaultAgents): { investigation: Investigation; done: Promise<void> } {
   const input = store.getCase(caseId);
   if (!input) throw new Error("CASE_NOT_FOUND");
 
-  const investigationId = randomUUID();
   const now = new Date().toISOString();
-  const result: InvestigationResult = {
-    investigationId, caseId, status: "running", agents: [],
-    missingDocuments: [],
-    financialAssessment: {
-      purchaseValue: input.purchasePrice,
-      confirmedRecovery: null,
-      estimatedRecovery: null,
-      currency: input.currency,
-      note: "Purchase value under investigation; this is not a guaranteed or estimated refund.",
-    },
-    createdAt: now, updatedAt: now,
+  const investigation: Investigation = {
+    investigationId: randomUUID(),
+    caseId,
+    status: "queued",
+    createdAt: now,
+    updatedAt: now,
+    seller: emptySeller(),
+    manufacturer: emptyManufacturer(),
+    serviceCentre: emptyServiceCentre(),
+    resolution: null,
+    money: buildMoney(input),
   };
-  store.saveInvestigation(result);
-  publishEvent(investigationId, "status", "Investigation started.");
+  store.saveInvestigation(investigation);
+  publishEvent(investigation.investigationId, "status", "Investigation queued.", undefined, { status: "queued" });
 
-  // Local hackathon runner. Use a durable queue for multi-instance deployment.
-  void executeInvestigation(investigationId, caseId).catch(error => {
-    const current = store.getInvestigation(investigationId);
-    if (current) {
-      current.status = "failed";
-      current.updatedAt = new Date().toISOString();
-      store.saveInvestigation(current);
-    }
-    publishEvent(investigationId, "warning", error instanceof Error ? error.message : "Unexpected orchestration error.");
-    publishEvent(investigationId, "complete", "Investigation failed.");
+  const id = investigation.investigationId;
+  const done = new Promise<void>(resolve => {
+    setImmediate(() => {
+      execute(id, input, agents)
+        .catch(error => {
+          const err = asError(error);
+          store.updateInvestigation(id, inv => { inv.status = "failed"; inv.error = err; inv.completedAt = new Date().toISOString(); });
+          publishEvent(id, "warning", "Investigation crashed unexpectedly.", undefined, { code: err.code });
+          publishEvent(id, "complete", "Investigation failed.", undefined, { status: "failed" });
+        })
+        .finally(resolve);
+    });
   });
-
-  return investigationId;
+  return { investigation, done };
 }
 
-async function executeInvestigation(investigationId: string, caseId: string): Promise<void> {
-  const input = store.getCase(caseId);
-  const result = store.getInvestigation(investigationId);
-  if (!input || !result) throw new Error("CASE_OR_INVESTIGATION_NOT_FOUND");
+async function runAgent<K extends "seller" | "manufacturer" | "serviceCentre">(
+  id: string, key: K, agent: InvestigationAgent, input: Case,
+): Promise<Investigation[K]> {
+  const agentName = agent.name;
+  store.updateInvestigation(id, inv => { inv[key].status = "running"; });
+  publishEvent(id, "agent", `${agentName} agent started.`, agentName, { status: "running" });
+  let result;
+  try {
+    result = await agent.run({ investigationId: id, caseId: input.caseId, input });
+  } catch (error) {
+    // Agents should not throw, but a crash in one must not erase the other's results.
+    const fallback = { seller: emptySeller, manufacturer: emptyManufacturer, serviceCentre: emptyServiceCentre }[key];
+    result = { ...fallback("failed", `${agentName} agent crashed.`), error: asError(error), investigatedAt: new Date().toISOString() };
+  }
+  store.updateInvestigation(id, inv => { (inv as unknown as Record<string, unknown>)[key] = result; });
+  publishEvent(id, "agent", `${agentName} agent ${result.status}.`, agentName, {
+    status: result.status, evidenceCount: result.evidence.length, ...(result.error ? { error: result.error } : {}),
+  });
+  for (const e of result.evidence) publishEvent(id, "finding", e.title, agentName, { evidenceId: e.id, sourceUrl: e.sourceUrl, verification: e.verification });
+  return result as Investigation[K];
+}
 
-  const runAgent = async (agent: typeof sellerAgent | typeof manufacturerAgent): Promise<AgentResult> => {
-    publishEvent(investigationId, "agent", `${agent.name} investigation started.`, agent.name);
-    const agentResult = await agent.run({ investigationId, caseId, input });
-    result.agents = [...result.agents.filter(a => a.agent !== agent.name), agentResult];
-    result.updatedAt = new Date().toISOString();
-    store.saveInvestigation(result);
-    publishEvent(investigationId, "agent", `${agent.name} investigation ${agentResult.status}.`, agent.name, { findingsCount: agentResult.findings.length, error: agentResult.error });
-    return agentResult;
-  };
+async function execute(id: string, input: Case, agents: Agents): Promise<void> {
+  store.updateInvestigation(id, inv => { inv.status = "running"; });
+  publishEvent(id, "status", "Investigation running.", undefined, { status: "running" });
 
-  const [seller, manufacturer] = await Promise.all([runAgent(sellerAgent), runAgent(manufacturerAgent)]);
-  const assessment = assessResolution(input, seller, manufacturer);
-  result.recommendation = assessment.recommendation;
-  result.missingDocuments = assessment.missingDocuments;
+  const [seller, manufacturer] = await Promise.all([
+    runAgent(id, "seller", agents.seller, input),
+    runAgent(id, "manufacturer", agents.manufacturer, input),
+  ]);
 
-  if (assessment.shouldFindServiceCentre) {
-    publishEvent(investigationId, "status", "Warranty evidence suggests checking authorised service options.");
-    publishEvent(investigationId, "agent", "Service-centre discovery started.", "service_centre");
-    const service = await serviceCentreAgent.run({ investigationId, caseId, input });
-    result.agents.push(service);
-    publishEvent(investigationId, "agent", `Service-centre discovery ${service.status}.`, "service_centre", { findingsCount: service.findings.length, error: service.error });
+  const { recommendation, shouldFindServiceCentre } = assessResolution(input, seller, manufacturer);
+  store.updateInvestigation(id, inv => { inv.resolution = recommendation; });
+
+  if (shouldFindServiceCentre) {
+    publishEvent(id, "status", "Warranty evidence suggests checking authorised service options.");
+    await runAgent(id, "serviceCentre", agents.serviceCentre, input);
   } else {
-    publishEvent(investigationId, "status", "Service-centre search skipped because current evidence does not yet support that route.");
+    store.updateInvestigation(id, inv => { inv.serviceCentre = emptyServiceCentre("not_applicable", "Skipped: current evidence does not support a service-centre route."); });
+    publishEvent(id, "agent", "service_centre agent not_applicable.", "service_centre", { status: "not_applicable" });
   }
 
-  const statuses = result.agents.map(a => a.status);
-  result.status = statuses.length > 0 && statuses.every(s => s === "failed") ? "failed" : statuses.some(s => s === "failed" || s === "partial") ? "partial" : "completed";
-  result.updatedAt = new Date().toISOString();
-  store.saveInvestigation(result);
-  publishEvent(investigationId, "complete", `Investigation ${result.status}.`);
+  const final = store.getInvestigation(id)!;
+  const status = finalStatus([final.seller.status, final.manufacturer.status, final.serviceCentre.status]);
+  store.updateInvestigation(id, inv => { inv.status = status; inv.completedAt = new Date().toISOString(); });
+  publishEvent(id, "complete", `Investigation ${status}.`, undefined, { status });
+}
+
+function finalStatus(statuses: AgentStatus[]): InvestigationStatus {
+  const ran = statuses.filter(s => s !== "not_applicable" && s !== "pending");
+  if (ran.length === 0 || ran.every(s => s === "failed" || s === "blocked")) return "failed";
+  if (ran.some(s => s === "failed" || s === "blocked" || s === "partial")) return "completed_with_warnings";
+  return "completed";
 }

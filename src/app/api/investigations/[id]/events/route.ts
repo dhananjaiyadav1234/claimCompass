@@ -1,36 +1,53 @@
+import { TERMINAL_INVESTIGATION_STATUSES, type InvestigationEvent } from "@/lib/contracts";
+import { apiError } from "@/lib/http";
 import { store } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+const POLL_MS = 300;
+const HEARTBEAT_MS = 15_000;
+
+const frame = (e: InvestigationEvent) => `id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`;
+
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  if (!store.getInvestigation(id)) return new Response("Investigation not found", { status: 404 });
+  if (!store.getInvestigation(id)) return apiError(404, "INVESTIGATION_NOT_FOUND", "No investigation with that id.");
+
+  // Reconnect: browsers send Last-Event-ID automatically; ?lastEventId= is for manual use.
+  const raw = request.headers.get("last-event-id") ?? new URL(request.url).searchParams.get("lastEventId");
+  let cursor = Number.parseInt(raw ?? "0", 10);
+  if (!Number.isFinite(cursor) || cursor < 0) cursor = 0;
 
   const encoder = new TextEncoder();
-  let cursor = 0;
-  let closed = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let lastWrite = Date.now();
+  const stop = () => { if (timer) clearInterval(timer); timer = undefined; };
+
   const stream = new ReadableStream({
-    async start(controller) {
-      const send = (event: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-      const interval = setInterval(() => {
-        if (closed) return;
-        const all = store.getEvents(id);
-        while (cursor < all.length) send(all[cursor++]);
-        const result = store.getInvestigation(id);
-        if (result && ["completed", "partial", "failed"].includes(result.status) && cursor >= all.length) {
-          clearInterval(interval);
-          closed = true;
-          controller.close();
-        }
-      }, 400);
-      // Initial keepalive
-      controller.enqueue(encoder.encode(": connected\n\n"));
-      const cancel = () => { closed = true; clearInterval(interval); };
-      // Store cancellation hook on stream controller where supported.
-      (controller as ReadableStreamDefaultController & { _cancel?: () => void })._cancel = cancel;
+    start(controller) {
+      const write = (s: string) => { controller.enqueue(encoder.encode(s)); lastWrite = Date.now(); };
+      const tick = () => {
+        try {
+          for (const e of store.getEvents(id, cursor)) { write(frame(e)); cursor = e.seq; }
+          const inv = store.getInvestigation(id);
+          if (inv && TERMINAL_INVESTIGATION_STATUSES.includes(inv.status) && store.getEvents(id, cursor).length === 0) {
+            stop();
+            controller.close();
+          } else if (Date.now() - lastWrite >= HEARTBEAT_MS) {
+            write(": heartbeat\n\n");
+          }
+        } catch { stop(); }
+      };
+      write("retry: 3000\n\n");
+      tick();
+      if (timer === undefined && !request.signal.aborted) timer = setInterval(tick, POLL_MS);
+      request.signal.addEventListener("abort", () => { stop(); try { controller.close(); } catch { /* already closed */ } });
     },
-    cancel() { closed = true; },
+    cancel: stop,
   });
-  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" },
+  });
 }

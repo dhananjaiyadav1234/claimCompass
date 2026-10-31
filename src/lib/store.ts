@@ -1,20 +1,45 @@
-import type {
-  CaseInput, InvestigationEvent, InvestigationResult
-} from "./contracts";
+import type { Case, Investigation, InvestigationEvent } from "./contracts";
 
-const cases = new Map<string, CaseInput>();
-const investigations = new Map<string, InvestigationResult>();
-const events = new Map<string, InvestigationEvent[]>();
+/**
+ * Process-local in-memory store (hackathon foundation).
+ * Limitations: data is lost on restart, not shared across server instances/serverless
+ * invocations. Kept on globalThis so Next.js route bundles and dev HMR share one instance.
+ * Replace with Supabase/Postgres + a durable job queue before multi-instance deployment.
+ */
+interface StoreData {
+  cases: Map<string, Case>;
+  investigations: Map<string, Investigation>;
+  events: Map<string, InvestigationEvent[]>;
+}
+
+const g = globalThis as unknown as { __claimCompassStore?: StoreData };
+const data: StoreData = (g.__claimCompassStore ??= {
+  cases: new Map(),
+  investigations: new Map(),
+  events: new Map(),
+});
 
 export const store = {
-  saveCase(id: string, value: CaseInput) { cases.set(id, value); },
-  getCase(id: string) { return cases.get(id); },
-  saveInvestigation(value: InvestigationResult) { investigations.set(value.investigationId, value); },
-  getInvestigation(id: string) { return investigations.get(id); },
-  addEvent(event: InvestigationEvent) {
-    const list = events.get(event.investigationId) ?? [];
-    list.push(event);
-    events.set(event.investigationId, list);
+  saveCase(value: Case) { data.cases.set(value.caseId, value); },
+  getCase(id: string) { return data.cases.get(id); },
+  saveInvestigation(value: Investigation) { data.investigations.set(value.investigationId, value); },
+  getInvestigation(id: string) { return data.investigations.get(id); },
+  /** Apply a mutation and persist, so partial results survive later failures. */
+  updateInvestigation(id: string, mutate: (inv: Investigation) => void): Investigation | undefined {
+    const inv = data.investigations.get(id);
+    if (!inv) return undefined;
+    mutate(inv);
+    inv.updatedAt = new Date().toISOString();
+    return inv;
   },
-  getEvents(id: string) { return events.get(id) ?? []; },
+  addEvent(event: Omit<InvestigationEvent, "seq">): InvestigationEvent {
+    const list = data.events.get(event.investigationId) ?? [];
+    const full = { ...event, seq: list.length + 1 };
+    list.push(full);
+    data.events.set(event.investigationId, list);
+    return full;
+  },
+  getEvents(id: string, afterSeq = 0) { return (data.events.get(id) ?? []).filter(e => e.seq > afterSeq); },
+  /** Test helper. */
+  clear() { data.cases.clear(); data.investigations.clear(); data.events.clear(); },
 };

@@ -1,32 +1,42 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { CreateComplaintSchema, type ComplaintDraft } from "@/lib/contracts";
+import { apiError } from "@/lib/http";
 import { store } from "@/lib/store";
 
-const Schema = z.object({ caseId: z.string().min(1), investigationId: z.string().min(1) });
+export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
-  const parsed = Schema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST", details: parsed.error.flatten() }, { status: 400 });
+  const parsed = CreateComplaintSchema.safeParse(body);
+  if (!parsed.success) return apiError(400, "INVALID_REQUEST", "Request validation failed.", parsed.error.flatten());
 
   const input = store.getCase(parsed.data.caseId);
-  const result = store.getInvestigation(parsed.data.investigationId);
-  if (!input || !result || result.caseId !== parsed.data.caseId) return NextResponse.json({ error: "CASE_OR_INVESTIGATION_NOT_FOUND" }, { status: 404 });
+  if (!input) return apiError(404, "CASE_NOT_FOUND", "No case with that caseId.");
+  const inv = store.getInvestigation(parsed.data.investigationId);
+  if (!inv || inv.caseId !== input.caseId) return apiError(404, "INVESTIGATION_NOT_FOUND", "No investigation with that id for this case.");
 
-  const evidence = result.agents.flatMap(a => a.findings);
-  const draft = [
-    `Subject: Request for assistance regarding ${input.productName} ${input.model}`.trim(),
+  const evidence = [...inv.seller.evidence, ...inv.manufacturer.evidence, ...inv.serviceCentre.evidence];
+  const product = [input.productName, input.modelNumber].filter(Boolean).join(" ");
+  const body_ = [
+    "Hello,",
     "",
-    `I purchased ${input.productName} ${input.model} from ${input.seller} on ${input.purchaseDate} for ${input.currency} ${input.purchasePrice}.`,
-    `The issue I am experiencing is: ${input.issueDescription}`,
+    `I purchased ${product} from ${input.seller} on ${input.purchaseDate} for ${input.currency} ${input.purchasePrice}. Order/invoice reference: [ADD ORDER ID / INVOICE NUMBER].`,
+    `The issue I am experiencing: ${input.issueDescription}`,
     "",
-    "I request that you review this issue and advise the applicable return, replacement, repair or warranty resolution under your official policy.",
+    "I would like to understand which resolution (return, replacement, repair or warranty service) applies under your official policy, and what documents you need from me.",
+    ...(evidence.length ? ["", "Policy information I reviewed:", ...evidence.map(e => `- ${e.title} (${e.sourceUrl})`)] : []),
     "",
-    "Evidence reviewed:",
-    ...evidence.map(f => `- ${f.title}: ${f.description} (${f.sourceUrl})`),
-    "",
-    "Please confirm the applicable process and any documents required.",
+    "Thank you,",
+    "[YOUR NAME]  [YOUR CONTACT DETAILS]",
   ].join("\n");
 
-  return NextResponse.json({ draft, requiresUserReview: true, evidenceCount: evidence.length });
+  const draft: ComplaintDraft = {
+    subject: `Request for assistance: ${product}`,
+    body: body_,
+    evidenceUrls: [...new Set(evidence.map(e => e.sourceUrl))],
+    requiresUserReview: true,
+    sentAutomatically: false,
+    generatedAt: new Date().toISOString(),
+  };
+  return NextResponse.json(draft);
 }
