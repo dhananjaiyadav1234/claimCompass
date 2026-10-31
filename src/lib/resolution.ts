@@ -11,10 +11,11 @@ export function assessResolution(
   seller: SellerInvestigationResult,
   manufacturer: ManufacturerWarrantyResult,
 ): { recommendation: ResolutionRecommendation; shouldFindServiceCentre: boolean } {
-  const warrantyPotential =
+  // An assessment of "appears expired" (potentialCoverage "not_applicable") overrides supportive-looking evidence.
+  const warrantyPotential = manufacturer.potentialCoverage !== "not_applicable" && (
     manufacturer.potentialCoverage === "potentially_applicable" ||
     manufacturer.potentialCoverage === "verified" ||
-    manufacturer.evidence.some(e => supportive(e.verification));
+    manufacturer.evidence.some(e => supportive(e.verification)));
   const sellerPotential = seller.evidence.some(e => supportive(e.verification));
 
   const missingInformation = [...seller.missingInformation, ...manufacturer.missingInformation];

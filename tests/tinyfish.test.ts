@@ -54,6 +54,14 @@ describe("TinyFish adapter (mocked)", () => {
     expect(await code(runTinyFishTask(base, fake([c])))).toBe("TASK_FAILED");
   });
 
+  it("recovers the failure reason from the stored run record when the stream omits it", async () => {
+    const client = { ...fake([complete({ status: "FAILED", result: null, error: null })]), runs: { get: async () => ({ error: { message: "Request may violate usage policies" } }) } } as TinyFishLike;
+    try { await runTinyFishTask(base, client); throw new Error("expected rejection"); } catch (e) {
+      expect(e).toBeInstanceOf(TinyFishError);
+      expect((e as TinyFishError).message).toMatch(/usage policies/);
+    }
+  });
+
   it("maps SDK auth / rate-limit errors", async () => {
     const res = new Response(null, { status: 401 });
     expect(await code(runTinyFishTask(base, fake([], { throwOnStart: new AuthenticationError("bad key sk-secret", { response: res }) })))).toBe("AUTH_FAILED");

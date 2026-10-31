@@ -109,7 +109,8 @@ interface AgentResult {
 }
 // SellerInvestigationResult        adds: policyCategory?, applicableConditions[], possibleRoutes[], details? (SellerDetails; see docs/SELLER_AGENT.md)
 // ManufacturerWarrantyResult       adds: manufacturer?, matchedModel?, warrantyDuration?, warrantyStartRule?, potentialCoverage?,
-//                                        exclusions[], requiredDocuments[], claimSteps[], officialSupportPath?
+//                                        exclusions[], requiredDocuments[], claimSteps[], officialSupportPath?,
+//                                        details? (ManufacturerDetails, additive; see docs/MANUFACTURER_AGENT.md)
 // ServiceCentreResult              adds: manufacturer?, searchedLocation?, locatorUrl?, centres: ServiceCentre[], fallbackSupportPath?
 
 interface ServiceCentre { name: string; address?: string; phone?: string; openingHours?: string; serviceType?: string; sourceUrl: string }
@@ -170,5 +171,5 @@ interface ComplaintDraft {
 ## Known limitations (current build)
 
 - Storage is in-memory and process-local: data is lost on restart and not shared across instances/serverless. Single `next dev` / `next start` process only.
-- The seller agent is implemented (see `docs/SELLER_AGENT.md`; a real run takes ~1–5 minutes). The manufacturer and service-centre agents are not yet: they return `failed` with `AGENT_NOT_IMPLEMENTED`. All contract additions in this phase are additive/optional.
+- The seller agent is implemented (see `docs/SELLER_AGENT.md`; a real run takes ~1–5 minutes). The manufacturer agent is implemented too (see `docs/MANUFACTURER_AGENT.md`; up to ~6 minutes, and live reliability on heavy sites is not yet proven). The service-centre agent is not yet: they return `failed` with `AGENT_NOT_IMPLEMENTED`. All contract additions in this phase are additive/optional.
 - No auth, rate limiting or request deduplication yet.

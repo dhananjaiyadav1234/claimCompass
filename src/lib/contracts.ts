@@ -153,6 +153,67 @@ export interface SellerInvestigationResult extends AgentResult {
   details?: SellerDetails;
 }
 
+export type WarrantyStartEvent = "purchase_date" | "invoice_date" | "delivery_date" | "activation_date" | "manufacture_date" | "other" | "unknown";
+export type ModelMatch = "exact_verified" | "exact_unverified" | "similar_only" | "not_found" | "model_not_supplied";
+export type WarrantyAssessmentState = "warranty_not_verified" | "potentially_covered" | "appears_expired" | "cannot_determine";
+
+export interface ManufacturerDetails {
+  manufacturerIdentity: {
+    name: string | null;
+    /** The case has no brand field; identity is derived from the product name and must be treated as unconfirmed. */
+    identityBasis: string;
+    officialWebsite: string | null;
+    productIdentityConfidence: "high" | "medium" | "low";
+    modelMatch: ModelMatch;
+    exactModelVerified: boolean;
+    matchedModel: string | null;
+    uncertainty: string[];
+  };
+  warrantyTerms: {
+    duration: { value: number; unit: "months" | "years" | "days" } | null;
+    startEvent: WarrantyStartEvent;
+    startEventDetail: string | null;
+    /** Whether the verified terms are specific to the customer's exact model. */
+    termsApplyTo: "exact_model" | "product_family" | "generic" | "unknown";
+    regionalApplicability: "covers_customer_country" | "other_regions_only" | "unknown";
+    regionScope: "country_specific" | "regional" | "international" | "unknown";
+    internationalWarranty: Tri;
+    coversDefects: Tri;
+    exclusions: string[];
+    additionalConditions: string[];
+  };
+  claimProcess: {
+    claimInitiationUrl: string | null;
+    requiredDocuments: string[];
+    requiredProductInformation: string[];
+    proofOfPurchaseRequired: Tri;
+    serialNumberRequired: Tri;
+    registrationRequired: Tri;
+    inspectionRequired: Tri;
+    supportRoute: { description: string; url: string | null } | null;
+    recommendedNextStep: string;
+  };
+  investigationStatus: {
+    manufacturerIdentified: boolean;
+    exactModelMatched: boolean;
+    warrantyTermsLocated: boolean;
+    warrantyTermsVerified: boolean;
+    regionalApplicabilityEstablished: boolean;
+    missingInformation: string[];
+    blockedPages: string[];
+  };
+  assessment: {
+    state: WarrantyAssessmentState;
+    /** Always false: only the manufacturer can confirm coverage of a specific unit (serial/registration records). */
+    customerCoverageConfirmed: false;
+    /** ISO date, only when duration, start event and purchase date were all verified. */
+    estimatedExpiry: string | null;
+    daysSincePurchase: number;
+    explanation: string;
+    caveats: string[];
+  };
+}
+
 export interface ManufacturerWarrantyResult extends AgentResult {
   agent: "manufacturer";
   manufacturer?: string;
@@ -164,6 +225,8 @@ export interface ManufacturerWarrantyResult extends AgentResult {
   requiredDocuments: string[];
   claimSteps: string[];
   officialSupportPath?: string;
+  /** Present once the manufacturer agent has run to a result; additive. */
+  details?: ManufacturerDetails;
 }
 
 export interface ServiceCentre {

@@ -65,6 +65,7 @@ export interface TinyFishTaskResult<T = Record<string, unknown>> {
 export interface TinyFishLike {
   search?: { query(params: { query: string; location?: string; language?: string }): Promise<{ results: Array<{ position: number; title: string; url: string; snippet: string; site_name: string }> }> };
   fetch?: { getContents(params: { urls: string[]; format?: "markdown" }): Promise<{ results: Array<{ url: string; final_url: string | null; text: unknown }>; errors: Array<{ url: string; error: string }> }> };
+  runs?: { get(runId: string): Promise<{ error?: { message?: string } | null }> };
   agent: { stream(params: AgentRunParams, options?: { signal?: AbortSignal; onStarted?: (e: { run_id: string }) => void; onStreamingUrl?: (e: { streaming_url: string }) => void; onProgress?: (e: { purpose: string }) => void }): Promise<AsyncIterable<{ type: string } & Partial<CompleteEvent>>> };
 }
 
@@ -158,7 +159,16 @@ export async function runTinyFishTask<T = Record<string, unknown>>(
     if (timedOut) throw new TinyFishError("TIMEOUT", `TinyFish task exceeded ${timeoutMs} ms.`, runId);
     if (!complete) throw new TinyFishError("INVALID_RESPONSE", "TinyFish stream ended without a COMPLETE event.", runId);
     runId = complete.run_id ?? runId;
-    if (complete.status !== "COMPLETED") throw mapRunFailure(complete);
+    if (complete.status !== "COMPLETED") {
+      // The stream's COMPLETE event can omit the error; the stored run record usually has the reason.
+      if (!complete.error?.message && runId && tf.runs) {
+        try {
+          const rec = await tf.runs.get(runId);
+          if (rec.error?.message) complete = { ...complete, error: { ...(complete.error ?? { category: "UNKNOWN", retry_after: null }), message: rec.error.message } as CompleteEvent["error"] };
+        } catch { /* keep the generic message */ }
+      }
+      throw mapRunFailure(complete);
+    }
 
     const raw = complete.result;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

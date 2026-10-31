@@ -105,9 +105,13 @@ Results (`GET resultsUrl`, abridged):
 
 `seller.details` (when present) carries seller identity, policy findings, `customerAction` (claim URL, support route, documents to prepare) and `eligibility`. Show `eligibility.explanation` and `assessment` as a cautious hint, never as approval: `sellerConfirmed` is always `false`, and `appears_outside_window` means "this route may be closed", not "denied". Evidence items may carry `sourceType`, `sourceName` and `confidence`; show `verification: "unverified"` items as unverified. A seller investigation can take several minutes; show `Browsing: …` agent events as live progress.
 
+## Manufacturer result extras (additive)
+
+`manufacturer.details` (when present) holds `manufacturerIdentity`, `warrantyTerms`, `claimProcess`, `investigationStatus` and `assessment`. `assessment.state` is one of `warranty_not_verified | potentially_covered | appears_expired | cannot_determine`; `customerCoverageConfirmed` is always `false`. Word these as "may be covered" / "may have ended" / "could not be determined", never "covered" or "expired". `warrantyTerms.duration` is `null` when not verified (never show 0). Manufacturer identity is derived from the product name and is unconfirmed (`identityBasis`). A manufacturer investigation can take up to ~6 minutes; show `Browsing: …` events as progress.
+
 ## Current limitations
 
 - Backend storage is in-memory: restarting the server loses cases/investigations (re-create the case if you get a 404 after a restart).
-- The seller agent is real; the manufacturer and service-centre agents are not yet implemented and come back `failed` with `AGENT_NOT_IMPLEMENTED`. The investigation therefore usually ends `completed_with_warnings`. That's expected; build the UI against both states. Real results will arrive in later backend phases with no contract change.
+- The seller and manufacturer agents are real (slow: minutes, and either can time out and report `failed`); the service-centre agent is not yet implemented and, if triggered, comes back `failed` with `AGENT_NOT_IMPLEMENTED`. That's expected; build the UI against both states. Real results will arrive in later backend phases with no contract change.
 - No auth/CORS (same-origin only), no rate limiting.
 - `resolution` is a basic rule set for now and will become richer, but its shape is stable.

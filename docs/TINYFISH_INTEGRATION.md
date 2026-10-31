@@ -79,3 +79,10 @@ Run on 2026-10-31 via `npm run smoke:tinyfish`:
 - Run id `dcda16ab-67ef-4799-8c02-bac0f9fedfd8`, status `COMPLETED`, 16.8 s, 4 progress events.
 - Result: `{"pageTitle":"Example Domain","heading":"Example Domain","linkText":"Learn more"}`.
 - A first attempt failed with the `max_steps` gating described above (that surfaced the issue); `maxSteps` was then removed from the smoke test.
+
+## Later findings (Phases 4–5)
+
+- `search.query` and `fetch.getContents` are wrapped by `searchTinyFish` / `fetchTinyFishPages` (used by the seller and manufacturer agents).
+- `output_schema` rejects `description` keys.
+- When a run ends `FAILED` and the stream's `COMPLETE` event has no error text, the adapter reads the stored run (`client.runs.get(runId)`) to recover the reason.
+- TinyFish's content filter can reject a goal ("may violate our usage policies", `AGENT_FAILURE`, 0 steps); this was reproducible with a prompt line listing extra candidate URLs.

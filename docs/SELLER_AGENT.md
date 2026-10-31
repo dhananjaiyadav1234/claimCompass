@@ -70,7 +70,7 @@ All TinyFish errors use the adapter's codes, surfaced as `TINYFISH_<CODE>` (`NOT
 ## Tests
 
 ```bash
-npm test                      # 52 mocked tests incl. tests/seller.test.ts (no network; TINYFISH_API_KEY is stripped by tests/setup.ts)
+npm test                      # 93 mocked tests incl. tests/seller.test.ts (no network; TINYFISH_API_KEY is stripped by tests/setup.ts)
 npm run live:seller           # OPTIONAL live run: real search + browser + fetch. CONSUMES CREDITS, 1–5 min, needs TINYFISH_API_KEY
 ```
 

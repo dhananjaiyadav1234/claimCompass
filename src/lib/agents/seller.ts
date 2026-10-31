@@ -6,6 +6,7 @@ import {
 } from "../tinyfish/client";
 import type { InvestigationAgent } from "./types";
 import { asError, emptySeller } from "./shared";
+import { excerptAppearsIn, hostOf, isOfficialHost, isOfficialUrl } from "./official";
 import { assessEligibility } from "./seller-eligibility";
 import { clean, SELLER_FIELD_GUIDE, SELLER_OUTPUT_JSON_SCHEMA, SellerRawSchema, type SellerFinding, type SellerRaw } from "./seller-schema";
 
@@ -21,42 +22,15 @@ const POLICY_HINT = /return|refund|replace|policy|policies|help|support|warranty
 const POLICY_TOPICS = new Set<SellerFinding["topic"]>(["defective_return", "refund", "replacement"]);
 const ORDER_LEVEL_NOTE = "Eligibility for this specific order can only be confirmed by the seller.";
 
-// ---------- Official-source helpers (no seller names are hardcoded) ----------
+// ---------- Official-source helpers (shared: ./official) ----------
 
-const nameKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
-const firstToken = (name: string) => name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0] ?? "";
-
-/** A host is treated as the seller's official site only if one of its labels contains the seller's name. */
-export function isOfficialHost(host: string, sellerName: string): boolean {
-  const key = nameKey(sellerName);
-  const first = firstToken(sellerName);
-  if (key.length < 3) return false;
-  const labels = host.toLowerCase().split(".").slice(0, -1); // drop TLD
-  return labels.some(l => l.includes(key) || (first.length >= 4 && l.includes(first)));
-}
-
-function hostOf(url: string): string | null {
-  try { return new URL(url).hostname; } catch { return null; }
-}
-
-const isOfficialUrl = (url: string | null, seller: string) => { const h = url ? hostOf(url) : null; return h !== null && isOfficialHost(h, seller); };
+export { isOfficialHost, excerptAppearsIn };
 
 export function pickStartUrl(hits: WebSearchHit[], sellerName: string): string | null {
   const official = hits.filter(h => /^https:\/\//i.test(h.url) && isOfficialUrl(h.url, sellerName));
   if (official.length === 0) return null;
   const score = (h: WebSearchHit) => (POLICY_HINT.test(h.url) ? 2 : 0) + (POLICY_HINT.test(h.title) ? 1 : 0) - h.position / 1000;
   return [...official].sort((a, b) => score(b) - score(a))[0].url;
-}
-
-function normalizeForMatch(s: string): string {
-  return s.toLowerCase().replace(/[*_`#>|[\]()]/g, " ").replace(/[‘’“”"']/g, "").replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
-}
-
-/** True if every ≥20-char segment of the excerpt (split on ellipses) appears in the page text. */
-export function excerptAppearsIn(excerpt: string, pageText: string): boolean {
-  const page = normalizeForMatch(pageText);
-  const segments = excerpt.split(/\.{3}|…/).map(normalizeForMatch).filter(s => s.length >= 20);
-  return segments.length > 0 && segments.every(s => page.includes(s));
 }
 
 // ---------- Goal ----------
