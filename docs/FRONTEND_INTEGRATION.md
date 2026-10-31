@@ -73,7 +73,7 @@ data: {"seq":3,"investigationId":"3ed3…","timestamp":"…","type":"agent","age
 
 id: 5
 event: agent
-data: {"seq":5,…,"agent":"seller","message":"seller agent failed.","data":{"status":"failed","evidenceCount":0,"error":{"code":"TINYFISH_NOT_CONFIGURED","message":"…"}}}
+data: {"seq":5,…,"agent":"seller","message":"seller agent failed.","data":{"status":"failed","evidenceCount":0,"error":{"code":"AGENT_NOT_IMPLEMENTED","message":"…"}}}
 
 id: 9
 event: complete
@@ -104,6 +104,6 @@ Results (`GET resultsUrl`, abridged):
 ## Current limitations
 
 - Backend storage is in-memory: restarting the server loses cases/investigations (re-create the case if you get a 404 after a restart).
-- The research agents are not wired to TinyFish yet, so right now every agent comes back `failed` with `TINYFISH_NOT_CONFIGURED` and the investigation ends `failed`. That's expected; build the UI against both states. Real results will arrive in later backend phases with no contract change.
+- The research agents are not implemented yet (the TinyFish adapter itself is done), so right now every agent comes back `failed` with `AGENT_NOT_IMPLEMENTED` and the investigation ends `failed`. That's expected; build the UI against both states. Real results will arrive in later backend phases with no contract change.
 - No auth/CORS (same-origin only), no rate limiting.
 - `resolution` is a basic rule set for now and will become richer, but its shape is stable.

@@ -128,7 +128,7 @@ describe("results endpoint", () => {
     await done;
     const inv = store.getInvestigation(investigation.investigationId)!;
     expect(inv.status).toBe("failed");
-    expect(inv.seller.error?.code).toBe("TINYFISH_NOT_CONFIGURED");
+    expect(inv.seller.error?.code).toBe("AGENT_NOT_IMPLEMENTED");
     expect(inv.serviceCentre.status).toBe("not_applicable");
   });
 });

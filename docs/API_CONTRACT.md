@@ -168,5 +168,5 @@ interface ComplaintDraft {
 ## Known limitations (current build)
 
 - Storage is in-memory and process-local: data is lost on restart and not shared across instances/serverless. Single `next dev` / `next start` process only.
-- Agents are not implemented yet (TinyFish integration comes in later phases); until then every agent returns `failed` with `TINYFISH_NOT_CONFIGURED`.
+- Agents are not implemented yet (TinyFish integration comes in later phases); until then every agent returns `failed` with `AGENT_NOT_IMPLEMENTED`.
 - No auth, rate limiting or request deduplication yet.

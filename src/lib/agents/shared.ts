@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { TinyFishError } from "../tinyfish/client";
 import type {
   AgentError, AgentName, Evidence, ManufacturerWarrantyResult,
   SellerInvestigationResult, ServiceCentreResult,
@@ -10,10 +11,8 @@ export function evidence(agent: AgentName, input: Omit<Evidence, "id" | "retriev
 
 export function asError(error: unknown): AgentError {
   const message = error instanceof Error ? error.message : "Unknown agent error";
-  return {
-    code: message.includes("not configured") ? "TINYFISH_NOT_CONFIGURED" : "AGENT_EXECUTION_FAILED",
-    message,
-  };
+  if (error instanceof TinyFishError) return { code: `TINYFISH_${error.code}`, message };
+  return { code: "AGENT_EXECUTION_FAILED", message };
 }
 
 const base = { evidence: [], missingInformation: [], limitations: [] };
