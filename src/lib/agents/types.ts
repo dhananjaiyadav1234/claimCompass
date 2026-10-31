@@ -6,6 +6,8 @@ export interface AgentContext {
   investigationId: string;
   caseId: string;
   input: Case;
+  /** Emit a progress message to the investigation event stream. Never pass prompts or secrets. */
+  emit?: (message: string) => void;
 }
 
 export interface AgentResultMap {

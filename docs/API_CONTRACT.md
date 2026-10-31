@@ -107,7 +107,7 @@ interface AgentResult {
   evidence: Evidence[]; missingInformation: string[]; limitations: string[];
   error?: { code: string; message: string }; investigatedAt?: string;
 }
-// SellerInvestigationResult        adds: policyCategory?, applicableConditions[], possibleRoutes[]
+// SellerInvestigationResult        adds: policyCategory?, applicableConditions[], possibleRoutes[], details? (SellerDetails; see docs/SELLER_AGENT.md)
 // ManufacturerWarrantyResult       adds: manufacturer?, matchedModel?, warrantyDuration?, warrantyStartRule?, potentialCoverage?,
 //                                        exclusions[], requiredDocuments[], claimSteps[], officialSupportPath?
 // ServiceCentreResult              adds: manufacturer?, searchedLocation?, locatorUrl?, centres: ServiceCentre[], fallbackSupportPath?
@@ -117,6 +117,8 @@ interface ServiceCentre { name: string; address?: string; phone?: string; openin
 interface Evidence {
   id: string; agent: AgentName; title: string; description: string;
   sourceUrl: string; sourceTitle?: string; excerpt?: string;
+  sourceName?: string; sourceType?: "official_policy" | "official_help" | "official_account" | "unverified"; // optional, set by the seller agent onward
+  confidence?: "high" | "medium" | "low";
   verification: VerificationStatus; retrievedAt: string;
 }
 
@@ -168,5 +170,5 @@ interface ComplaintDraft {
 ## Known limitations (current build)
 
 - Storage is in-memory and process-local: data is lost on restart and not shared across instances/serverless. Single `next dev` / `next start` process only.
-- Agents are not implemented yet (TinyFish integration comes in later phases); until then every agent returns `failed` with `AGENT_NOT_IMPLEMENTED`.
+- The seller agent is implemented (see `docs/SELLER_AGENT.md`; a real run takes ~1–5 minutes). The manufacturer and service-centre agents are not yet: they return `failed` with `AGENT_NOT_IMPLEMENTED`. All contract additions in this phase are additive/optional.
 - No auth, rate limiting or request deduplication yet.

@@ -73,7 +73,7 @@ data: {"seq":3,"investigationId":"3ed3…","timestamp":"…","type":"agent","age
 
 id: 5
 event: agent
-data: {"seq":5,…,"agent":"seller","message":"seller agent failed.","data":{"status":"failed","evidenceCount":0,"error":{"code":"AGENT_NOT_IMPLEMENTED","message":"…"}}}
+data: {"seq":5,…,"agent":"manufacturer","message":"manufacturer agent failed.","data":{"status":"failed","evidenceCount":0,"error":{"code":"AGENT_NOT_IMPLEMENTED","message":"…"}}}
 
 id: 9
 event: complete
@@ -101,9 +101,13 @@ Results (`GET resultsUrl`, abridged):
 - Money: show `purchaseValueUnderInvestigation` labelled **"Purchase value under investigation"**. Show a recovery figure only if `confirmedRecovery` is non-null; show `estimatedRecovery` only with an "Estimate" label and `estimateBasis`. `null` = unknown. Values are plain numbers in `currency`; format in the UI (`Intl.NumberFormat("en-IN", {style:"currency", currency})`).
 - Complaint: `POST /api/complaints` returns a draft only (`requiresUserReview: true`, `sentAutomatically: false`). Show it for the user to copy/edit; it contains `[PLACEHOLDERS]` to fill in. Nothing is sent.
 
+## Seller result extras (additive)
+
+`seller.details` (when present) carries seller identity, policy findings, `customerAction` (claim URL, support route, documents to prepare) and `eligibility`. Show `eligibility.explanation` and `assessment` as a cautious hint, never as approval: `sellerConfirmed` is always `false`, and `appears_outside_window` means "this route may be closed", not "denied". Evidence items may carry `sourceType`, `sourceName` and `confidence`; show `verification: "unverified"` items as unverified. A seller investigation can take several minutes; show `Browsing: …` agent events as live progress.
+
 ## Current limitations
 
 - Backend storage is in-memory: restarting the server loses cases/investigations (re-create the case if you get a 404 after a restart).
-- The research agents are not implemented yet (the TinyFish adapter itself is done), so right now every agent comes back `failed` with `AGENT_NOT_IMPLEMENTED` and the investigation ends `failed`. That's expected; build the UI against both states. Real results will arrive in later backend phases with no contract change.
+- The seller agent is real; the manufacturer and service-centre agents are not yet implemented and come back `failed` with `AGENT_NOT_IMPLEMENTED`. The investigation therefore usually ends `completed_with_warnings`. That's expected; build the UI against both states. Real results will arrive in later backend phases with no contract change.
 - No auth/CORS (same-origin only), no rate limiting.
 - `resolution` is a basic rule set for now and will become richer, but its shape is stable.

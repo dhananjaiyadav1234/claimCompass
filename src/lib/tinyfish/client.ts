@@ -8,7 +8,7 @@
  */
 import { TinyFish, AuthenticationError, PaymentRequiredError, RateLimitError, RequestTimeoutError, APITimeoutError, SDKError } from "@tiny-fish/sdk";
 import type { AgentRunParams, CompleteEvent } from "@tiny-fish/sdk";
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 
 export type TinyFishErrorCode =
   | "NOT_CONFIGURED"
@@ -41,7 +41,7 @@ export interface TinyFishTaskInput<T = Record<string, unknown>> {
   /** JSON Schema (top-level object) asking TinyFish for structured output. */
   outputSchema?: Record<string, unknown>;
   /** Optional Zod schema to validate the final result; failure => INVALID_RESPONSE. */
-  resultSchema?: ZodType<T>;
+  resultSchema?: ZodType<T, ZodTypeDef, unknown>;
   /** Overall wall-clock budget. Default 120s. */
   timeoutMs?: number;
   /** Cap on agent steps (passed to TinyFish agent_config.max_steps). */
@@ -63,6 +63,8 @@ export interface TinyFishTaskResult<T = Record<string, unknown>> {
 
 /** The slice of the SDK we use; lets tests inject a fake. */
 export interface TinyFishLike {
+  search?: { query(params: { query: string; location?: string; language?: string }): Promise<{ results: Array<{ position: number; title: string; url: string; snippet: string; site_name: string }> }> };
+  fetch?: { getContents(params: { urls: string[]; format?: "markdown" }): Promise<{ results: Array<{ url: string; final_url: string | null; text: unknown }>; errors: Array<{ url: string; error: string }> }> };
   agent: { stream(params: AgentRunParams, options?: { signal?: AbortSignal; onStarted?: (e: { run_id: string }) => void; onStreamingUrl?: (e: { streaming_url: string }) => void; onProgress?: (e: { purpose: string }) => void }): Promise<AsyncIterable<{ type: string } & Partial<CompleteEvent>>> };
 }
 
@@ -177,5 +179,38 @@ export async function runTinyFishTask<T = Record<string, unknown>>(
     throw mapped;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export interface WebSearchHit { title: string; url: string; snippet: string; position: number }
+
+/** TinyFish Search: ranked results only (snippets are NOT evidence). */
+export async function searchTinyFish(query: string, opts: { location?: string; language?: string } = {}, client?: TinyFishLike): Promise<WebSearchHit[]> {
+  const tf = client ?? createClient();
+  if (!tf.search) throw new TinyFishError("PROVIDER_ERROR", "TinyFish search is unavailable.");
+  try {
+    const res = await tf.search.query({ query, ...opts });
+    return res.results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet, position: r.position }));
+  } catch (error) {
+    throw mapSdkError(error);
+  }
+}
+
+/** TinyFish Fetch: page text (markdown) for up to 10 URLs. Returns url -> text|null (null = could not fetch). */
+export async function fetchTinyFishPages(urls: string[], client?: TinyFishLike): Promise<Map<string, string | null>> {
+  const tf = client ?? createClient();
+  if (!tf.fetch) throw new TinyFishError("PROVIDER_ERROR", "TinyFish fetch is unavailable.");
+  const out = new Map<string, string | null>(urls.map(u => [u, null]));
+  if (urls.length === 0) return out;
+  try {
+    const res = await tf.fetch.getContents({ urls: urls.slice(0, 10), format: "markdown" });
+    for (const r of res.results) {
+      const text = typeof r.text === "string" ? r.text : null;
+      out.set(r.url, text);
+      if (r.final_url) out.set(r.final_url, text);
+    }
+    return out;
+  } catch (error) {
+    throw mapSdkError(error);
   }
 }

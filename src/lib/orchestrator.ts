@@ -65,7 +65,7 @@ async function runAgent<K extends "seller" | "manufacturer" | "serviceCentre">(
   publishEvent(id, "agent", `${agentName} agent started.`, agentName, { status: "running" });
   let result;
   try {
-    result = await agent.run({ investigationId: id, caseId: input.caseId, input });
+    result = await agent.run({ investigationId: id, caseId: input.caseId, input, emit: message => { publishEvent(id, "agent", message.slice(0, 200), agentName); } });
   } catch (error) {
     // Agents should not throw, but a crash in one must not erase the other's results.
     const fallback = { seller: emptySeller, manufacturer: emptyManufacturer, serviceCentre: emptyServiceCentre }[key];

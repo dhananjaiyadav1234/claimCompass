@@ -61,13 +61,20 @@ export const CreateComplaintSchema = z.object({
 
 // ---------- Evidence & agent results ----------
 
+export type EvidenceSourceType = "official_policy" | "official_help" | "official_account" | "unverified";
+
 export interface Evidence {
   id: string;
   agent: AgentName;
   title: string;
+  /** The finding itself, in plain language. */
   description: string;
   sourceUrl: string;
   sourceTitle?: string;
+  /** Additive, optional (seller agent onward). */
+  sourceName?: string;
+  sourceType?: EvidenceSourceType;
+  confidence?: "high" | "medium" | "low";
   excerpt?: string;
   verification: VerificationStatus;
   retrievedAt: string;
@@ -89,11 +96,61 @@ export interface AgentResult {
   investigatedAt?: string;
 }
 
+export type Tri = "yes" | "no" | "unknown";
+
+export interface SellerDetails {
+  sellerIdentity: {
+    marketplaceOrSeller: string;
+    officialWebsite: string | null;
+    /** True only when the actual merchant of this order is verified. The agent has no order access, so this is currently always false. */
+    merchantConfirmed: boolean;
+    soldBy: "marketplace_direct" | "third_party" | "unknown";
+    policyDistinguishesSellerTypes: Tri;
+    uncertainty: string[];
+  };
+  policyFindings: {
+    defectiveReturn: string | null;
+    refund: string | null;
+    replacement: string | null;
+    timeLimits: string[];
+    eligibilityConditions: string[];
+    exclusions: string[];
+    categoryRestrictions: string[];
+    distinguishesDefectiveFromChangeOfMind: Tri;
+  };
+  customerAction: {
+    recommendedNextStep: string;
+    claimInitiationUrl: string | null;
+    supportRoute: { description: string; url: string | null } | null;
+    documentsToPrepare: string[];
+  };
+  investigationStatus: {
+    policyLocated: boolean;
+    policyVerified: boolean;
+    eligibilityAssessable: boolean;
+    missingInformation: string[];
+    blockedPages: string[];
+  };
+  eligibility: {
+    policyExists: Tri;
+    policyAppliesToCategory: Tri;
+    customerAppearsToSatisfy: Tri;
+    /** Always false: only the seller can confirm eligibility for a specific order. */
+    sellerConfirmed: false;
+    assessment: "policy_not_verified" | "cannot_determine" | "appears_within_window" | "appears_outside_window";
+    policyWindowDays: number | null;
+    daysSincePurchase: number;
+    explanation: string;
+  };
+}
+
 export interface SellerInvestigationResult extends AgentResult {
   agent: "seller";
   policyCategory?: string;
   applicableConditions: string[];
   possibleRoutes: string[];
+  /** Present once the seller agent has run; absent while pending. Additive. */
+  details?: SellerDetails;
 }
 
 export interface ManufacturerWarrantyResult extends AgentResult {
